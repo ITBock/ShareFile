@@ -8,18 +8,20 @@ import java.util.List;
 
 public class ServerThread implements Runnable {
     static HashSet<String> commands = new HashSet<>();
-    static File directory = new File("D:\\vscode\\Java_Code\\src\\WorkCode\\ShareFile\\resource");
 
     static {
         commands.add("ls");
         commands.add("touch");
         commands.add("mkdir");
         commands.add("rm");
+        commands.add("cd");
         commands.add("cat");
         commands.add("vi");
         commands.add("exit");
         commands.add("help");
     }
+
+    private File directory = new File("D:/vscode/Java_Code/src/WorkCode/ShareFile/resource");
 
     private ServerSocket serverSocket;
 
@@ -65,6 +67,7 @@ public class ServerThread implements Runnable {
                                     "touch 文件名\t---创建新文件\n" +
                                     "mkdir 目录名\t---创建新目录\n" +
                                     "rm 文件名\t---删除指定文件\n" +
+                                    "cd 目录名\t---进入指定目录\n" +
                                     "cat 文件名\t---查看文件内容\n" +
                                     "vi 文件名\t---修改指定文件\n" +
                                     "exit\t---断开连接\n" +
@@ -110,7 +113,9 @@ public class ServerThread implements Runnable {
                             else Connect.send(os, "文件" + pieces[1] + "已存在");
                         }
                         case "mkdir" -> {
-                            
+                            if (new File(directory, pieces[1]).mkdir())
+                                Connect.send(os, "目录" + pieces[1] + "创建成功");
+                            else Connect.send(os, "目录" + pieces[1] + "已存在");
                         }
                         case "rm" -> {
                             if (fileSet.contains(pieces[1])) {
@@ -118,6 +123,24 @@ public class ServerThread implements Runnable {
                                     Connect.send(os, "文件" + pieces[1] + "删除成功");
                                 else Connect.send(os, "文件" + pieces[1] + "删除失败");
                             } else Connect.send(os, "文件" + pieces[1] + "不存在");
+                        }
+                        case "cd" -> {
+                            if("..".equals(pieces[1]) || "../".equals(pieces[1])) {
+                                File d = directory.getParentFile();
+                                if(d != null) {
+                                    directory = d;
+                                    Connect.send(os, "返回" + directory.getName() + "目录");
+                                }
+                                else Connect.send(os, "当前已是根目录");
+                            }
+                            else if (fileSet.contains(pieces[1])) {
+                                File d = new File(directory, pieces[1]);
+                                if(d.isDirectory()) {
+                                    directory = d;
+                                    Connect.send(os, "进入" + pieces[1] + "目录");
+                                }
+                                else Connect.send(os, pieces[1] + "不是一个目录");
+                            } else Connect.send(os, "目录" + pieces[1] + "不存在");
                         }
                         case "cat" -> {
                             if (fileSet.contains(pieces[1])) {
