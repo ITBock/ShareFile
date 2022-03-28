@@ -7,7 +7,9 @@ import java.util.HashSet;
 import java.util.List;
 
 public class ServerThread implements Runnable {
-    static HashSet<String> commands = new HashSet<>();
+    private static HashSet<String> commands = new HashSet<>();
+
+    private static final String rootPath = "D:/vscode/Java_Code/src/WorkCode/ShareFile/resource";
 
     static {
         commands.add("ls");
@@ -16,16 +18,19 @@ public class ServerThread implements Runnable {
         commands.add("rm");
         commands.add("cd");
         commands.add("cat");
+        commands.add("cp");
+        commands.add("mv");
         commands.add("vi");
         commands.add("exit");
         commands.add("help");
     }
 
-    private File directory = new File("D:/vscode/Java_Code/src/WorkCode/ShareFile/resource");
+    private File directory = new File(rootPath);
+    private int depth = 0;
 
     private ServerSocket serverSocket;
 
-    ServerThread(ServerSocket serverSocket) {
+    public ServerThread(ServerSocket serverSocket) {
         this.serverSocket = serverSocket;
     }
 
@@ -56,7 +61,7 @@ public class ServerThread implements Runnable {
             while(true) {
                 String line = Connect.receive(is);
 
-                String []pieces = line.split(" ", 2);
+                String []pieces = line.split(" +", 3);
                 if(!commands.contains(pieces[0]))
                     Connect.send(os, pieces[0] + "指令不存在");
 
@@ -69,6 +74,8 @@ public class ServerThread implements Runnable {
                                     "rm 文件名\t---删除指定文件\n" +
                                     "cd 目录名\t---进入指定目录\n" +
                                     "cat 文件名\t---查看文件内容\n" +
+                                    "cp 源文件路径 目标目录路径\t---拷贝文件\n" +
+                                    "mv 源文件路径 目标目录路径\t---移动文件\n" +
                                     "vi 文件名\t---修改指定文件\n" +
                                     "exit\t---断开连接\n" +
                                     "help\t---显示当前内容";
@@ -96,54 +103,87 @@ public class ServerThread implements Runnable {
                 }
 
                 else if(pieces.length == 2 && commands.contains(pieces[0])) {
-//                        文件存放目录
-                    String []files = directory.list();
-                    HashSet<String> fileSet;
-                    if(files == null)
-                        fileSet = new HashSet<>();
-                    else fileSet = new HashSet<>(List.of(files));
 
                     switch (pieces[0]) {
-                        case "ls" -> {
-                            Connect.send(os, pieces[0] + "无需参数");
-                        }
                         case "touch" -> {
-                            if (new File(directory, pieces[1]).createNewFile())
+                            if(pieces[1].contains("/"))
+                                Connect.send(os, "文件名不可带有\"/\"");
+                            else if (new File(directory, pieces[1]).createNewFile())
                                 Connect.send(os, "文件" + pieces[1] + "创建成功");
                             else Connect.send(os, "文件" + pieces[1] + "已存在");
                         }
                         case "mkdir" -> {
-                            if (new File(directory, pieces[1]).mkdir())
+                            if(pieces[1].contains("/"))
+                                Connect.send(os, "目录名不可带有\"/\"");
+                            else if (new File(directory, pieces[1]).mkdir())
                                 Connect.send(os, "目录" + pieces[1] + "创建成功");
                             else Connect.send(os, "目录" + pieces[1] + "已存在");
                         }
                         case "rm" -> {
-                            if (fileSet.contains(pieces[1])) {
+                            File file = new File(directory, pieces[1]);
+
+                            if (file.exists()) {
                                 if (new File(directory, pieces[1]).delete())
                                     Connect.send(os, "文件" + pieces[1] + "删除成功");
                                 else Connect.send(os, "文件" + pieces[1] + "删除失败");
                             } else Connect.send(os, "文件" + pieces[1] + "不存在");
                         }
                         case "cd" -> {
-                            if("..".equals(pieces[1]) || "../".equals(pieces[1])) {
-                                File d = directory.getParentFile();
-                                if(d != null) {
-                                    directory = d;
-                                    Connect.send(os, "返回" + directory.getName() + "目录");
-                                }
-                                else Connect.send(os, "当前已是根目录");
+                            File tDirectory = directory;
+                            int tDepth = depth;
+                            if(pieces[1].charAt(0) == '/') {
+                                tDirectory = new File(rootPath);
+                                tDepth = 0;
                             }
-                            else if (fileSet.contains(pieces[1])) {
-                                File d = new File(directory, pieces[1]);
-                                if(d.isDirectory()) {
-                                    directory = d;
-                                    Connect.send(os, "进入" + pieces[1] + "目录");
+                            String []ds = pieces[1].split("/+");
+                            int level = ds.length, i = 0;
+                            for(i = 0; i < level; i++) {
+                                String d = ds[i];
+                                if(".".equals(d) || "".equals(d)) {continue;}
+
+                                String []files = tDirectory.list();
+                                HashSet<String> fileSet;
+                                if(files == null)
+                                    fileSet = new HashSet<>();
+                                else fileSet = new HashSet<>(List.of(files));
+
+                                if("..".equals(d)) {
+                                    if(tDepth > 0) {
+                                        tDirectory = tDirectory.getParentFile();
+                                        tDepth--;
+                                    }
+                                    else {
+                                        Connect.send(os, "根目录不可返回上一层");
+                                        break;
+                                    }
                                 }
-                                else Connect.send(os, pieces[1] + "不是一个目录");
-                            } else Connect.send(os, "目录" + pieces[1] + "不存在");
+                                else if (fileSet.contains(d)) {
+                                    File dt = new File(tDirectory, d);
+                                    if(dt.isDirectory()) {
+                                        tDirectory = dt;
+                                        tDepth++;
+                                    }
+                                    else {
+                                        Connect.send(os, d + "不是一个目录");
+                                        break;
+                                    }
+                                } else {
+                                    Connect.send(os, "目录" + d + "不存在");
+                                    break;
+                                }
+                            }
+                            if(i == level) {
+                                directory = tDirectory;
+                                depth = tDepth;
+                                if(depth == 0)
+                                    Connect.send(os, "当前位于根目录下");
+                                else Connect.send(os, "当前位于" + directory.getName() + "目录下");
+                            }
                         }
                         case "cat" -> {
-                            if (fileSet.contains(pieces[1])) {
+                            File file = new File(directory, pieces[1]);
+
+                            if (file.exists()) {
                                 FileInputStream fis = new FileInputStream(new File(directory, pieces[1]));
                                 byte []bf = new byte[1024];
                                 int lf;
@@ -159,7 +199,9 @@ public class ServerThread implements Runnable {
                             } else Connect.send(os, "文件" + pieces[1] + "不存在");
                         }
                         case "vi" -> {
-                            if(fileSet.contains(pieces[1])) {
+                            File file = new File(directory, pieces[1]);
+
+                            if(file.exists()) {
                                 Connect.send(os, "multiInput");
 
                                 String msg = Connect.receive(is);
@@ -174,6 +216,52 @@ public class ServerThread implements Runnable {
                                 else Connect.send(os, "文件" + pieces[1] + "未发生变动");
                             }
                             else Connect.send(os, "文件" + pieces[1] + "不存在");
+                        }
+                        default -> {
+                            Connect.send(os, pieces[0] + "无需参数");
+                        }
+                    }
+                }
+                else if(pieces.length == 3 && commands.contains(pieces[0])) {
+                    switch (pieces[0]) {
+                        case "cp" -> {
+                            String msg = null;
+                            File source = new File(msg = locateFile(pieces[1]));
+                            if(source.isFile()) {
+                                File target = new File(msg = locateDirectory(pieces[2]));
+                                if(target.isDirectory()) {
+                                    FileInputStream bis = new FileInputStream(source);
+                                    FileOutputStream bos = new FileOutputStream(new File(target, source.getName()));
+                                    bos.write(bis.readAllBytes());
+                                    bis.close();
+                                    bos.close();
+                                    Connect.send(os, "文件" + source.getName() + "拷贝成功");
+                                }
+                                else Connect.send(os, msg);
+                            }
+                            else Connect.send(os, msg);
+                        }
+                        case "mv" -> {
+                            String msg = null;
+                            File source = new File(msg = locateFile(pieces[1]));
+                            if(source.isFile()) {
+                                File target = new File(msg = locateDirectory(pieces[2]));
+                                if(target.isDirectory()) {
+                                    FileInputStream bis = new FileInputStream(source);
+                                    FileOutputStream bos = new FileOutputStream(new File(target, source.getName()));
+                                    bos.write(bis.readAllBytes());
+                                    bis.close();
+                                    bos.close();
+                                    if(source.delete()) {
+                                        Connect.send(os, "文件" + source.getName() + "移动成功");
+                                    }else Connect.send(os, "文件" + source.getName() + "移动失败");
+                                }
+                                else Connect.send(os, msg);
+                            }
+                            else Connect.send(os, msg);
+                        }
+                        default -> {
+                            Connect.send(os, pieces[0] + "存在多余参数");
                         }
                     }
                 }
@@ -190,5 +278,75 @@ public class ServerThread implements Runnable {
                 ex.printStackTrace();
             }
         }
+    }
+
+    String locateFile(String navigation) {
+        File tDirectory = directory;
+        int tDepth = depth;
+        if(navigation.charAt(0) == '/') {
+            tDirectory = new File(rootPath);
+            tDepth = 0;
+        }
+        String []ds = navigation.split("/+");
+        int level = ds.length;
+        for(int i = 0; i < level; i++) {
+            String d = ds[i];
+            if(".".equals(d) || "".equals(d)) {continue;}
+
+            File file = new File(tDirectory, d);
+
+            if("..".equals(d)) {
+                if(tDepth > 0) {
+                    tDirectory = tDirectory.getParentFile();
+                    tDepth--;
+                }
+                else return "根目录不可返回上一层";
+            }
+            else if (file.exists()) {
+                File dt = new File(tDirectory, d);
+                if(dt.isDirectory() || i == level - 1) {
+                    tDirectory = dt;
+                    tDepth++;
+                }
+                else return d + "不是一个目录";
+            } else return "目录" + d + "不存在";
+        }
+        if(tDirectory.isDirectory())
+            return tDirectory.getName() + "不是一个文件";
+        else return tDirectory.getAbsolutePath();
+    }
+
+    String locateDirectory(String navigation) {
+        File tDirectory = directory;
+        int tDepth = depth;
+        if(navigation.charAt(0) == '/') {
+            tDirectory = new File(rootPath);
+            tDepth = 0;
+        }
+        String []ds = navigation.split("/+");
+        int level = ds.length;
+        for(int i = 0; i < level; i++) {
+            String d = ds[i];
+            if(".".equals(d) || "".equals(d)) {continue;}
+
+            File file = new File(tDirectory, d);
+
+            if("..".equals(d)) {
+                if(tDepth > 0) {
+                    tDirectory = tDirectory.getParentFile();
+                    tDepth--;
+                }
+                else return "根目录不可返回上一层";
+            }
+            else if (file.exists()) {
+                File dt = new File(tDirectory, d);
+                if(dt.isDirectory()) {
+                    tDirectory = dt;
+                    tDepth++;
+                }
+                else return d + "不是一个目录";
+            } else return "目录" + d + "不存在";
+        }
+        return tDirectory.getAbsolutePath();
     }
 }
