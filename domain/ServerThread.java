@@ -9,7 +9,7 @@ import java.util.List;
 public class ServerThread implements Runnable {
     private static HashSet<String> commands = new HashSet<>();
 
-    private static final String rootPath = "D:/vscode/Java_Code/src/WorkCode/ShareFile/resource";
+    private static final String rootPath = "D:\\vscode\\Java_Code\\src\\WorkCode\\ShareFile\\resource";
 
     static {
         commands.add("ls");
@@ -20,6 +20,7 @@ public class ServerThread implements Runnable {
         commands.add("cat");
         commands.add("cp");
         commands.add("mv");
+        commands.add("scp");
         commands.add("vi");
         commands.add("exit");
         commands.add("help");
@@ -76,6 +77,7 @@ public class ServerThread implements Runnable {
                                     "cat 文件名\t---查看文件内容\n" +
                                     "cp 源文件路径 目标目录路径\t---拷贝文件\n" +
                                     "mv 源文件路径 目标目录路径\t---移动文件\n" +
+                                    "scp 本地文件路径 远程目录路径\t---从本地拷贝到远程\n" +
                                     "vi 文件名\t---修改指定文件\n" +
                                     "exit\t---断开连接\n" +
                                     "help\t---显示当前内容";
@@ -129,56 +131,22 @@ public class ServerThread implements Runnable {
                             } else Connect.send(os, "文件" + pieces[1] + "不存在");
                         }
                         case "cd" -> {
-                            File tDirectory = directory;
-                            int tDepth = depth;
-                            if(pieces[1].charAt(0) == '/') {
-                                tDirectory = new File(rootPath);
-                                tDepth = 0;
-                            }
-                            String []ds = pieces[1].split("/+");
-                            int level = ds.length, i = 0;
-                            for(i = 0; i < level; i++) {
-                                String d = ds[i];
-                                if(".".equals(d) || "".equals(d)) {continue;}
+                            String msg = null;
+                            File tDirectory = new File(msg = locateDirectory(pieces[1]));
 
-                                String []files = tDirectory.list();
-                                HashSet<String> fileSet;
-                                if(files == null)
-                                    fileSet = new HashSet<>();
-                                else fileSet = new HashSet<>(List.of(files));
-
-                                if("..".equals(d)) {
-                                    if(tDepth > 0) {
-                                        tDirectory = tDirectory.getParentFile();
-                                        tDepth--;
-                                    }
-                                    else {
-                                        Connect.send(os, "根目录不可返回上一层");
-                                        break;
-                                    }
-                                }
-                                else if (fileSet.contains(d)) {
-                                    File dt = new File(tDirectory, d);
-                                    if(dt.isDirectory()) {
-                                        tDirectory = dt;
-                                        tDepth++;
-                                    }
-                                    else {
-                                        Connect.send(os, d + "不是一个目录");
-                                        break;
-                                    }
-                                } else {
-                                    Connect.send(os, "目录" + d + "不存在");
-                                    break;
-                                }
-                            }
-                            if(i == level) {
+                            if(tDirectory.isDirectory()) {
                                 directory = tDirectory;
-                                depth = tDepth;
-                                if(depth == 0)
+                                depth = 0;
+                                while(!rootPath.equals(tDirectory.getAbsolutePath())) {
+                                    tDirectory = tDirectory.getParentFile();
+                                    depth++;
+                                }
+                                if(depth == 0) {
                                     Connect.send(os, "当前位于根目录下");
+                                }
                                 else Connect.send(os, "当前位于" + directory.getName() + "目录下");
                             }
+                            else Connect.send(os, msg);
                         }
                         case "cat" -> {
                             File file = new File(directory, pieces[1]);
@@ -260,6 +228,28 @@ public class ServerThread implements Runnable {
                             }
                             else Connect.send(os, msg);
                         }
+                        case "scp" -> {
+                            String msg = null;
+                            File target = new File(msg = locateDirectory(pieces[2]));
+                            if(target.isDirectory()) {
+                                Connect.send(os, "upload");
+                                String name = Connect.receive(is);
+                                if("/".equals(name)) {
+                                    Connect.send(os, "本地文件路径不存在");
+                                    break;
+                                }
+
+                                File file = new File(target, name);
+                                FileOutputStream bos = new FileOutputStream(file);
+
+                                msg = Connect.receive(is);
+                                bos.write(msg.getBytes());
+
+                                bos.close();
+                                Connect.send(os, "文件" + name + "上传完成");
+                            }
+                            else Connect.send(os, msg);
+                        }
                         default -> {
                             Connect.send(os, pieces[0] + "存在多余参数");
                         }
@@ -286,6 +276,7 @@ public class ServerThread implements Runnable {
         if(navigation.charAt(0) == '/') {
             tDirectory = new File(rootPath);
             tDepth = 0;
+            navigation = navigation.substring(1);
         }
         String []ds = navigation.split("/+");
         int level = ds.length;
@@ -303,9 +294,8 @@ public class ServerThread implements Runnable {
                 else return "根目录不可返回上一层";
             }
             else if (file.exists()) {
-                File dt = new File(tDirectory, d);
-                if(dt.isDirectory() || i == level - 1) {
-                    tDirectory = dt;
+                if(file.isDirectory() || i == level - 1) {
+                    tDirectory = file;
                     tDepth++;
                 }
                 else return d + "不是一个目录";
@@ -322,6 +312,7 @@ public class ServerThread implements Runnable {
         if(navigation.charAt(0) == '/') {
             tDirectory = new File(rootPath);
             tDepth = 0;
+            navigation = navigation.substring(1);
         }
         String []ds = navigation.split("/+");
         int level = ds.length;
@@ -339,9 +330,8 @@ public class ServerThread implements Runnable {
                 else return "根目录不可返回上一层";
             }
             else if (file.exists()) {
-                File dt = new File(tDirectory, d);
-                if(dt.isDirectory()) {
-                    tDirectory = dt;
+                if(file.isDirectory()) {
+                    tDirectory = file;
                     tDepth++;
                 }
                 else return d + "不是一个目录";

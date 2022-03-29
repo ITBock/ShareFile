@@ -83,6 +83,17 @@ public class Client {
                     }
                     msg = Connect.receive(is);
                 }
+                if("upload".equals(msg)) {
+                    File file = new File(req.split(" +")[1]);
+                    if(file.isFile()) {
+                        Connect.send(os, file.getName());
+
+                        FileInputStream fis = new FileInputStream(file);
+                        Connect.send(os, new String(fis.readAllBytes()));
+                    } else Connect.send(os, "/");
+
+                    msg = Connect.receive(is);
+                }
 
                 System.out.println(msg);
                 if("exit".equals(req) && "bye".equals(msg))
