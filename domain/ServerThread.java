@@ -3,6 +3,7 @@ package WorkCode.ShareFile.domain;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 
@@ -15,6 +16,7 @@ public class ServerThread implements Runnable {
         commands.add("ls");
         commands.add("touch");
         commands.add("mkdir");
+        commands.add("rename");
         commands.add("rm");
         commands.add("cd");
         commands.add("cat");
@@ -72,6 +74,7 @@ public class ServerThread implements Runnable {
                             String msg = "ls\t---列出所有文件\n" +
                                     "touch 文件名\t---创建新文件\n" +
                                     "mkdir 目录名\t---创建新目录\n" +
+                                    "rename 文件名 新文件名\t---重命名\n" +
                                     "rm 文件名\t---删除指定文件\n" +
                                     "cd 目录名\t---进入指定目录\n" +
                                     "cat 文件名\t---查看文件内容\n" +
@@ -151,7 +154,7 @@ public class ServerThread implements Runnable {
                         case "cat" -> {
                             File file = new File(directory, pieces[1]);
 
-                            if (file.exists()) {
+                            if (file.isFile()) {
                                 FileInputStream fis = new FileInputStream(new File(directory, pieces[1]));
                                 byte []bf = new byte[1024];
                                 int lf;
@@ -169,7 +172,7 @@ public class ServerThread implements Runnable {
                         case "vi" -> {
                             File file = new File(directory, pieces[1]);
 
-                            if(file.exists()) {
+                            if(file.isFile()) {
                                 Connect.send(os, "multiInput");
 
                                 String msg = Connect.receive(is);
@@ -192,6 +195,16 @@ public class ServerThread implements Runnable {
                 }
                 else if(pieces.length == 3 && commands.contains(pieces[0])) {
                     switch (pieces[0]) {
+                        case "rename" -> {
+                            File file = new File(directory, pieces[1]);
+
+                            if(file.isFile()) {
+                                if(file.renameTo(new File(directory, pieces[2])))
+                                    Connect.send(os, "文件" + pieces[1] + "成功改名为" + pieces[2]);
+                                else Connect.send(os, "文件" + pieces[1] + "改名失败");
+                            }
+                            else Connect.send(os, "文件" + pieces[1] + "不存在");
+                        }
                         case "cp" -> {
                             String msg = null;
                             File source = new File(msg = locateFile(pieces[1]));
@@ -239,13 +252,10 @@ public class ServerThread implements Runnable {
                                     break;
                                 }
 
-                                File file = new File(target, name);
-                                FileOutputStream bos = new FileOutputStream(file);
-
-                                msg = Connect.receive(is);
-                                bos.write(msg.getBytes());
-
+                                FileOutputStream bos = new FileOutputStream(new File(target, name));
+                                Connect.receive(is, bos);
                                 bos.close();
+
                                 Connect.send(os, "文件" + name + "上传完成");
                             }
                             else Connect.send(os, msg);

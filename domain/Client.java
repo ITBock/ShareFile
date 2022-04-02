@@ -3,6 +3,7 @@ package WorkCode.ShareFile.domain;
 import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
 
 public class Client {
@@ -89,7 +90,7 @@ public class Client {
                         Connect.send(os, file.getName());
 
                         FileInputStream fis = new FileInputStream(file);
-                        Connect.send(os, new String(fis.readAllBytes()));
+                        Connect.send(os, fis.readAllBytes());
                     } else Connect.send(os, "/");
 
                     msg = Connect.receive(is);
